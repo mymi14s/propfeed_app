@@ -60,8 +60,8 @@ jobs:
 
       # Check SonarQube Quality Gate
       - name: SonarQube Quality Gate Check
-        working-directory: src
         id: sonarqube-quality-gate-check
+        working-directory: src
         uses: sonarsource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
         env:
