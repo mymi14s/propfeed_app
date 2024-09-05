@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         id: install_dependencies
         working-directory: src
-        run: python -m pip install --upgrade pip && pip install --no-cache-dir -r src/requirements.txt
+        run: python -m pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
       - name: Create and run tests with pytest and coverage
         id: create_run_test_files
@@ -48,7 +48,6 @@ jobs:
       
       - name: SonarQube Scan
         id: scan_with_sonarube
-        working-directory: src
         run: sonar-scanner
           -Dsonar.host.url=${{ secrets.SONAR_URL }} 
           -Dsonar.login=${{ secrets.SONAR_TOKEN }} 
