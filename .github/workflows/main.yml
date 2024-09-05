@@ -1,5 +1,16 @@
 name: Propfeed actions
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - production
+      - staging
+    # paths:
+    #   - src/**
+  pull_request:
+    branches:
+      - production
+    # paths:
+    #   - src/**
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: propfeed
@@ -61,6 +72,7 @@ jobs:
 
   # BUILD_AND_PUBLISH:
   #   needs: Testing
+  #   if: github.ref == 'refs/heads/production' && github.event_name == 'push'
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Code checkout
@@ -88,6 +100,7 @@ jobs:
 
   # DeployToEKS:
   #   needs: BUILD_AND_PUBLISH
+  #   if: github.ref == 'refs/heads/production' && github.event_name == 'push'
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Checkout Code
