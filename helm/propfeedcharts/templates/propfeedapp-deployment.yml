@@ -18,5 +18,5 @@ spec:
       - name: propfeedapp
         image: {{ .Values.appimage }}:{{ .Values.apptag}}
         ports:
-        - name: propfeedapp-port
+        - name: propf-port
           containerPort: 8000
