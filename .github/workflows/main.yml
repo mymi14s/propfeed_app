@@ -53,7 +53,7 @@ jobs:
           -Dsonar.login=${{ secrets.SONAR_TOKEN }} 
           -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} 
           -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} 
-          -Dsonar.sources=.
+          -Dsonar.sources=/src
           -Dsonar.python.coverage.reportPaths=src/coverage.xml
           -Dsonar.python.version=3.11 
 
