@@ -1,0 +1,8 @@
+src/db.sqlite*
+*/.env
+*/__pycache__
+__pycache__
+*/.pytest_cache
+*/.scannerwork
+*/.coverage
+*/coverage.xml

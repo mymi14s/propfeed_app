@@ -1,0 +1,122 @@
+name: Propfeed actions
+on: workflow_dispatch
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: propfeed
+  EKS_CLUSTER: propfeed-eks
+
+jobs:
+  Testing:
+    runs-on: ubuntu-latest
+    steps:
+      # Initial setup and tests
+      - name: Code checkout
+        id: initial_checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        id: install_python3
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Change to src directory
+        id: enter_src
+        run: cd src
+        
+      - name: Install dependencies
+        id: install_dependencies
+        run: python -m pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+      - name: Create and run tests with pytest and coverage
+        id: create_run_test_files
+        run: pytest --cov --cov-report=xml
+      
+      - name: Run pytest
+        id: create_test_files
+        run: python
+
+      # Run SonarQube scan
+      - name: Setup SonarQube
+        uses: warchant/setup-sonar-scanner@v7
+      
+      - name: SonarQube Scan
+        run: sonar-scanner
+          -Dsonar.host.url=${{ secrets.SONAR_URL }} 
+          -Dsonar.login=${{ secrets.SONAR_TOKEN }} 
+          -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} 
+          -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} 
+          -Dsonar.sources=.
+          -Dsonar.python.coverage.reportPaths=coverage.xml
+          -Dsonar.python.version=3.11 
+
+      # Check SonarQube Quality Gate
+      - name: SonarQube Quality Gate Check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
+
+  # BUILD_AND_PUBLISH:
+  #   needs: Testing
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Code checkout
+  #       uses: actions/checkout@v4
+
+  #     - name: upload image to ECR
+  #       uses: appleboy/docker-ecr-action@master
+  #       with:
+  #         access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         registry: ${{ secrets.REGISTRY }}
+  #         repo: ${{ env.ECR_REPOSITORY }}
+  #         region: ${{ env.AWS_REGION }}
+  #         tags: latest,${{ github.run_number }}
+  #         daemon_off: false
+  #         dockerfile: ./Dockerfile
+  #         context: ./
+  #         build_args: |
+  #           DB_NAME=${{ secrets.DB_NAME }}
+  #           DB_USER=${{ secrets.DB_USER }}
+  #           DB_PASS=${{ secrets.DB_PASS }}
+  #           DB_HOST=${{ secrets.DB_HOST }}
+  #           DB_PORT=${{ secrets.DB_PORT }}
+
+
+  # DeployToEKS:
+  #   needs: BUILD_AND_PUBLISH
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v4
+
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v1
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
+
+  #     - name: Get Kubeconfig for EKS Cluster
+  #       run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+
+  #     - name: Delete Existing ECR Secret (if exists)
+  #       run: kubectl delete secret regcred --ignore-not-found
+
+  #     - name: Login to ECR
+  #       run: kubectl create secret docker-registry regcred --docker-server=${{ secrets.REGISTRY }} --docker-username=AWS --docker-password=$(aws ecr get-login-password)
+
+  #     - name: Deploy Application with Helm
+  #       uses: bitovi/github-actions-deploy-eks-helm@v1.2.10
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
+  #         cluster-name: ${{ env.EKS_CLUSTER }}
+  #         chart-path: helm/propfeedcharts
+  #         namespace: default
+  #         values: appimage=${{ secrets.REGISTRY }}/${{ env.ECR_REPOSITORY }},apptag=${{ github.run_number }}
+  #         name: propfeed-stack

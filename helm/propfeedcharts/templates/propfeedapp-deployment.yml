@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: propfeedapp
+  labels: 
+    app: propfeedapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: propfeedapp
+  template:
+    metadata:
+      labels:
+        app: propfeedapp
+    spec:
+      containers:
+      - name: propfeedapp
+        image: {{ .Values.appimage }}:{{ .Values.apptag}}
+        ports:
+        - name: propfeedapp-port
+          containerPort: 8000
