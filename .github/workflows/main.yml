@@ -55,7 +55,7 @@ jobs:
           -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} 
           -Dsonar.sources=src
           -Dsonar.python.coverage.reportPaths=src/coverage.xml
-          -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/migrations/**,**/*.md,**/static/**,**/media/**,**//manage.py,**/wsgi.py,**/asgi.py
+          -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/migrations/**,**/*.md,**/static/**,**/media/**,**//manage.py,**/wsgi.py,**/asgi.py,**/wsgi.py,**/test.py
           -Dsonar.python.version=3.11
 
       # Check SonarQube Quality Gate
