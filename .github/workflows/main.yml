@@ -60,12 +60,16 @@ jobs:
 
       # Check SonarQube Quality Gate
       - name: SonarQube Quality Gate Check
-        id: sonarqube-quality-gate-check
+        id: sonarqube_quality_gate_check
         uses: sonarsource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
+
+      - name: SonarQube status
+        if: steps.sonarqube_quality_gate_check.outcome == 'failure'
+        run: exit 1
 
   BUILD_AND_PUBLISH:
     needs: Testing
@@ -73,9 +77,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Code checkout
+        id: build_publish_checkout
         uses: actions/checkout@v4
 
       - name: upload image to ECR
+        id: upload_image_to_ecr
         uses: appleboy/docker-ecr-action@master
         with:
           access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -92,40 +98,48 @@ jobs:
             DB_USER=${{ secrets.DB_USER }}
             DB_PASS=${{ secrets.DB_PASS }}
             DB_HOST=${{ secrets.DB_HOST }}
+            
+      - name: SonarQube status
+        if: steps.upload_image_to_ecr.outcome == 'failure'
+        run: exit 1
 
 
-  # DeployToEKS:
-  #   needs: BUILD_AND_PUBLISH
-  #   if: github.ref == 'refs/heads/production' && github.event_name == 'push'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v4
+  DeployToEKS:
+    needs: BUILD_AND_PUBLISH
+    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-  #     - name: Configure AWS Credentials
-  #       uses: aws-actions/configure-aws-credentials@v1
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS Credentials
+        id: configure_aws_credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-  #     - name: Get Kubeconfig for EKS Cluster
-  #       run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+      - name: Get Kubeconfig for EKS Cluster
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
 
-  #     - name: Delete Existing ECR Secret (if exists)
-  #       run: kubectl delete secret regcred --ignore-not-found
+      - name: Delete Existing ECR Secret (if exists)
+        id: delete_login_cred_if_exists
+        run: kubectl delete secret regcred --ignore-not-found
 
-  #     - name: Login to ECR
-  #       run: kubectl create secret docker-registry regcred --docker-server=${{ secrets.REGISTRY }} --docker-username=AWS --docker-password=$(aws ecr get-login-password)
+      - name: Login to ECR
+        id: login_to_ecr
+        run: kubectl create secret docker-registry regcred --docker-server=${{ secrets.REGISTRY }} --docker-username=AWS --docker-password=$(aws ecr get-login-password)
 
-  #     - name: Deploy Application with Helm
-  #       uses: bitovi/github-actions-deploy-eks-helm@v1.2.10
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: ${{ env.AWS_REGION }}
-  #         cluster-name: ${{ env.EKS_CLUSTER }}
-  #         chart-path: helm/propfeedcharts
-  #         namespace: default
-  #         values: appimage=${{ secrets.REGISTRY }}/${{ env.ECR_REPOSITORY }},apptag=${{ github.run_number }}
-  #         name: propfeed-stack
+      - name: Deploy Application with Helm
+        id: final_kubernetes_deployment
+        uses: bitovi/github-actions-deploy-eks-helm@v1.2.10
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          cluster-name: ${{ env.EKS_CLUSTER }}
+          chart-path: helm/propfeedcharts
+          namespace: default
+          values: appimage=${{ secrets.REGISTRY }}/${{ env.ECR_REPOSITORY }},apptag=${{ github.run_number }}
+          name: propfeed-stack

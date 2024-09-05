@@ -22,8 +22,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Set environment variable for Django settings
 ENV DJANGO_SETTINGS_MODULE=settings.production
 
-
-
 # Define build arguments
 ARG DB_NAME
 ARG DB_USER
