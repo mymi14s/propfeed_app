@@ -30,7 +30,7 @@ ENV DB_HOST=$DB_HOST
 # Expose the port the app runs on
 EXPOSE 8000
 
-RUN python manage.py migrate --settings=settings.production
+RUN python manage.py migrate --settings=settings.development
 
 # Use gunicorn to run the Django application
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "propfeed.wsgi:application"]
