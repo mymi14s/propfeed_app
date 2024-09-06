@@ -131,6 +131,19 @@ jobs:
         id: login_to_ecr
         run: kubectl create secret docker-registry regcred --docker-server=${{ secrets.REGISTRY }} --docker-username=AWS --docker-password=$(aws ecr get-login-password)
 
+      - name: Check and delete existing ingress
+        run: |
+          INGRESS_NAME=propfeed-ingress
+          NAMESPACE=default
+
+          # Check if the ingress exists
+          if kubectl get ingress $INGRESS_NAME -n $NAMESPACE; then
+            echo "Ingress $INGRESS_NAME exists. Deleting it..."
+            kubectl delete ingress $INGRESS_NAME -n $NAMESPACE
+          else
+            echo "Ingress $INGRESS_NAME does not exist. Skipping deletion."
+          fi
+
       - name: Deploy Application with Helm
         id: final_kubernetes_deployment
         uses: bitovi/github-actions-deploy-eks-helm@v1.2.10
