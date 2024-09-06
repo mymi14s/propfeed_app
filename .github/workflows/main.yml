@@ -80,6 +80,14 @@ jobs:
         id: build_publish_checkout
         uses: actions/checkout@v4
 
+      - name: Replace DB settings using sed
+        id: update_credentials
+        run: |
+          sed -i "s/'NAME': os\.environ\.get(\"DB_NAME\")/'NAME': '${{ secrets.DB_NAME }}'/g" src/settings/production.py
+          sed -i "s/'USER': os\.environ\.get(\"DB_USER\")/'USER': '${{ secrets.DB_USER }}'/g" src/settings/production.py
+          sed -i "s/'PASSWORD': os\.environ\.get(\"DB_PASS\")/'PASSWORD': '${{ secrets.DB_PASS }}'/g" src/settings/production.py
+          sed -i "s/'HOST': os\.environ\.get(\"DB_HOST\")/'HOST': '${{ secrets.DB_HOST }}'/g" src/settings/production.py
+
       - name: upload image to ECR
         id: upload_image_to_ecr
         uses: appleboy/docker-ecr-action@master
