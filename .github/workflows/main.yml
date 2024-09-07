@@ -1,0 +1,157 @@
+name: Propfeed actions
+on:
+  push:
+    branches:
+      - production
+      - staging
+    # paths:
+    #   - src/**
+  pull_request:
+    branches:
+      - production
+    # paths:
+    #   - src/**
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: propfeed
+  EKS_CLUSTER: propfeed-eks
+
+jobs:
+  Testing:
+    runs-on: ubuntu-latest
+    steps:
+      # Initial setup and tests
+      - name: Code checkout
+        id: initial_checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        id: install_python3
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+        
+      - name: Install dependencies
+        id: install_dependencies
+        working-directory: src
+        run: python -m pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+      - name: Create and run tests with pytest and coverage
+        id: create_run_test_files
+        working-directory: src
+        run: pytest --cov --cov-report=xml
+
+      # Run SonarQube scan
+      - name: Setup SonarQube
+        id: setup_sonarqube
+        uses: warchant/setup-sonar-scanner@v7
+      
+      - name: SonarQube Scan
+        id: scan_with_sonarube
+        run: sonar-scanner
+          -Dsonar.host.url=${{ secrets.SONAR_URL }} 
+          -Dsonar.login=${{ secrets.SONAR_TOKEN }} 
+          -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} 
+          -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} 
+          -Dsonar.sources=src
+          -Dsonar.python.coverage.reportPaths=src/coverage.xml
+          -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/migrations/**,**/*.md,**/static/**,**/media/**,**//manage.py,**/wsgi.py,**/asgi.py,**/wsgi.py,**/test.py
+          -Dsonar.python.version=3.11
+
+      # Check SonarQube Quality Gate
+      - name: SonarQube Quality Gate Check
+        id: sonarqube_quality_gate_check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
+
+      - name: SonarQube status
+        if: steps.sonarqube_quality_gate_check.outcome == 'failure'
+        run: exit 1
+
+  BUILD_AND_PUBLISH:
+    needs: Testing
+    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code checkout
+        id: build_publish_checkout
+        uses: actions/checkout@v4
+
+      - name: Data Makeup
+        id: update_credentials
+        run: |
+          sed -i "s/'NAME': os\.environ\.get(\"DB_NAME\")/'NAME': '${{ secrets.DB_NAME }}'/g" src/settings/production.py
+          sed -i "s/'USER': os\.environ\.get(\"DB_USER\")/'USER': '${{ secrets.DB_USER }}'/g" src/settings/production.py
+          sed -i "s/'PASSWORD': os\.environ\.get(\"DB_PASS\")/'PASSWORD': '${{ secrets.DB_PASS }}'/g" src/settings/production.py
+          sed -i "s/'HOST': os\.environ\.get(\"DB_HOST\")/'HOST': '${{ secrets.DB_HOST }}'/g" src/settings/production.py
+
+      - name: upload image to ECR
+        id: upload_image_to_ecr
+        uses: appleboy/docker-ecr-action@master
+        with:
+          access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          registry: ${{ secrets.REGISTRY }}
+          repo: ${{ env.ECR_REPOSITORY }}
+          region: ${{ env.AWS_REGION }}
+          tags: latest,${{ github.run_number }}
+          daemon_off: false
+          dockerfile: ./Dockerfile
+          context: ./
+          build_args: |
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASS=${{ secrets.DB_PASS }}
+            DB_HOST=${{ secrets.DB_HOST }}
+            
+      - name: Validate publish status
+        if: steps.upload_image_to_ecr.outcome == 'failure'
+        run: exit 1
+
+
+  DeployToEKS:
+    needs: BUILD_AND_PUBLISH
+    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        id: configure_aws_credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Kubeconfig for EKS Cluster
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+
+      - name: Delete Existing ECR Secret (if exists)
+        id: delete_login_cred_if_exists
+        run: kubectl delete secret regcred --ignore-not-found
+
+      - name: Login to ECR
+        id: login_to_ecr
+        run: kubectl create secret docker-registry regcred --docker-server=${{ secrets.REGISTRY }} --docker-username=AWS --docker-password=$(aws ecr get-login-password)
+
+      - name: Delete existing ingress
+        id: delete_ingress
+        run: kubectl delete ingress propfeed-ingress -n default --ignore-not-found
+
+      - name: Deploy Application with Helm
+        id: final_kubernetes_deployment
+        uses: bitovi/github-actions-deploy-eks-helm@v1.2.10
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          cluster-name: ${{ env.EKS_CLUSTER }}
+          chart-path: helm/propfeedcharts
+          namespace: default
+          values: appimage=${{ secrets.REGISTRY }}/${{ env.ECR_REPOSITORY }},apptag=${{ github.run_number }}
+          name: propfeed-stack
